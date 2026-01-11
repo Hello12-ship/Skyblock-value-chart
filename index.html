@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skyblock Market | Pro Tracker</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } 
+        from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- REPLACE WITH YOUR FIREBASE CONFIG ---
+        const firebaseConfig = {
+  apiKey: "AIzaSyAHTosOUlqg0vNWVYj0MZ-Be7LyjPSKNCM",
+  authDomain: "chats-5a1d4.firebaseapp.com",
+  databaseURL: "https://chats-5a1d4-default-rtdb.firebaseio.com",
+  projectId: "chats-5a1d4",
+  storageBucket: "chats-5a1d4.firebasestorage.app",
+  messagingSenderId: "617433631880",
+  appId: "1:617433631880:web:a8604b8a7dc3293f51e33d"
+};
+
+        // ------------------------------------------
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const itemsCollection = collection(db, "items");
+
+        let isAdmin = false;
+        let allItems = []; 
+
+        const grid = document.getElementById('marketGrid');
+        const adminPanel = document.getElementById('adminPanel');
+        const adminToggleBtn = document.getElementById('adminToggleBtn');
+        const addItemForm = document.getElementById('addItemForm');
+        const searchInput = document.getElementById('searchInput');
+
+        // --- Admin Logic ---
+        adminToggleBtn.addEventListener('click', () => {
+            if (isAdmin) {
+                isAdmin = false;
+                adminToggleBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Admin';
+                adminPanel.classList.add('hidden');
+            } else {
+                const password = prompt("Enter Secret Key:");
+                if (password === "alonecoders") {
+                    isAdmin = true;
+                    adminToggleBtn.innerHTML = '<i class="fa-solid fa-unlock"></i> Logout';
+                    adminPanel.classList.remove('hidden');
+                } else {
+                    alert("Access Denied.");
+                }
+            }
+            renderItems(allItems);
+        });
+
+        // --- Add Item (Updated with New Fields) ---
+        addItemForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('itemName').value;
+            const price = document.getElementById('itemPrice').value;
+            const prediction = document.getElementById('itemPrediction').value;
+            const predValue = document.getElementById('itemPredValue').value; // New: Percentage
+            const description = document.getElementById('itemDesc').value;   // New: Description
+            const details = document.getElementById('itemDetails').value;    // New: Extra Details
+            const image = document.getElementById('itemImage').value;
+
+            try {
+                await addDoc(itemsCollection, {
+                    name, price, prediction, predValue, description, details, image,
+                    createdAt: serverTimestamp()
+                });
+                addItemForm.reset();
+            } catch (error) {
+                alert("Error adding item: " + error.message);
+            }
+        });
+
+        // --- Real-time Sync ---
+        onSnapshot(itemsCollection, (snapshot) => {
+            allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            filterAndRender();
+        });
+
+        searchInput.addEventListener('input', filterAndRender);
+
+        function filterAndRender() {
+            const term = searchInput.value.toLowerCase();
+            const filtered = allItems.filter(item => item.name.toLowerCase().includes(term));
+            renderItems(filtered);
+        }
+
+        // --- Render Function (Updated UI) ---
+        function renderItems(items) {
+            grid.innerHTML = '';
+
+            if(items.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center text-slate-500 py-10">No items found.</div>`;
+                return;
+            }
+
+            items.forEach(item => {
+                const isHigh = item.prediction === 'High';
+                // Dynamic colors based on prediction
+                const badgeColor = isHigh ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+                const badgeIcon = isHigh ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+                const glowColor = isHigh ? 'group-hover:shadow-emerald-900/20' : 'group-hover:shadow-rose-900/20';
+
+                // Fallbacks for older data
+                const predVal = item.predValue || "0%";
+                const desc = item.description || "No market analysis available.";
+                const dets = item.details || "N/A";
+
+                const card = document.createElement('div');
+                card.className = `glass-card rounded-xl relative group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glowColor} overflow-hidden flex flex-col`;
+                
+                card.innerHTML = `
+                    <div class="p-4 flex gap-4 items-start border-b border-white/5 bg-white/[0.02]">
+                        <div class="relative w-16 h-16 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden flex-shrink-0">
+                             <img src="${item.image}" 
+                                 class="w-full h-full object-cover" 
+                                 onerror="this.src='https://placehold.co/100x100/1e293b/FFF?text=?'">
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-slate-100 font-bold text-lg truncate font-rajdhani tracking-wide">${item.name}</h3>
+                            <div class="flex items-baseline gap-2 mt-1">
+                                <span class="text-xl font-bold text-white font-rajdhani tracking-wider">${item.price}</span>
+                                ${isAdmin ? `<i onclick="window.editPrice('${item.id}', '${item.price}')" class="fa-solid fa-pencil text-[10px] text-slate-500 hover:text-blue-400 cursor-pointer p-1"></i>` : ''}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                             <div class="px-2 py-1 rounded text-xs font-bold uppercase tracking-wider ${badgeColor} border flex items-center justify-end gap-1.5">
+                                ${item.prediction}
+                                <i class="fa-solid ${badgeIcon}"></i>
+                            </div>
+                            <div class="text-[10px] font-mono mt-1 text-slate-400 opacity-80">
+                                Exp: <span class="${isHigh ? 'text-emerald-400' : 'text-rose-400'}">${predVal}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 flex-1">
+                        <p class="text-sm text-slate-400 leading-relaxed font-light line-clamp-2" title="${desc}">
+                            ${desc}
+                        </p>
+                    </div>
+
+                    <div class="px-4 py-3 bg-black/20 border-t border-white/5 flex justify-between items-center mt-auto">
+                        <div class="flex items-center gap-2 text-xs text-slate-500 font-mono">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <span class="truncate max-w-[150px]">${dets}</span>
+                        </div>
+                        
+                        ${isAdmin ? `
+                        <div class="flex gap-2">
+                             <button onclick="window.editPrediction('${item.id}', '${item.prediction}')" class="text-slate-600 hover:text-blue-400 transition-colors text-xs p-1">
+                                <i class="fa-solid fa-chart-line"></i>
+                            </button>
+                            <button onclick="window.deleteItem('${item.id}')" class="text-slate-600 hover:text-red-500 transition-colors text-xs p-1">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // --- Global Window Functions ---
+        window.editPrice = async (id, oldPrice) => {
+            const newPrice = prompt("Update Price:", oldPrice);
+            if (newPrice && newPrice !== oldPrice) updateDoc(doc(db, "items", id), { price: newPrice });
+        };
+
+        window.editPrediction = async (id, oldPred) => {
+            const newPred = oldPred === 'High' ? 'Low' : 'High';
+            if(confirm(`Flip prediction to ${newPred}?`)) updateDoc(doc(db, "items", id), { prediction: newPred });
+        };
+
+        window.deleteItem = async (id) => {
+            if(confirm("Delete this item?")) deleteDoc(doc(db, "items", id));
+        };
+
+        // --- PRANK MODE ---
+        window.crashMarket = () => {
+            const body = document.body;
+            body.style.transition = "all 2s ease";
+            body.style.transform = "rotate(180deg) scale(0.8) skew(10deg)";
+            body.style.filter = "invert(1) hue-rotate(180deg)";
+            
+            setTimeout(() => {
+                alert("⚠️ CRITICAL ERROR: MARKET CRASH DETECTED ⚠️\n\nJust kidding. Don't panic sell.");
+                body.style.transform = "none";
+                body.style.filter = "none";
+            }, 3000);
+        };
+
+    </script>
+
+    <style>
+        body {
+            background-color: #0f172a;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+            background-attachment: fixed;
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+        }
+        .font-rajdhani { font-family: 'Rajdhani', sans-serif; }
+        
+        /* Smooth Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .glass-input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .glass-input:focus {
+            background: rgba(0, 0, 0, 0.4);
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen pb-20">
+
+    <header class="glass-panel sticky top-0 z-50 mb-8">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3 group cursor-pointer">
+                <div class="w-10 h-10 rounded bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
+                    <i class="fa-solid fa-cube text-white text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold font-rajdhani text-white leading-none tracking-wide">SKYBLOCK</h1>
+                    <span class="text-[10px] text-blue-400 font-bold uppercase tracking-[0.2em]">Market Intelligence</span>
+                </div>
+            </div>
+            
+            <div class="flex gap-3 w-full md:w-auto">
+                <div class="relative flex-1 md:w-64">
+                    <i class="fa-solid fa-search absolute left-3 top-3 text-slate-500 text-xs"></i>
+                    <input type="text" id="searchInput" placeholder="Search item..." class="glass-input w-full py-2 pl-8 pr-3 rounded-lg text-sm">
+                </div>
+                <button id="adminToggleBtn" class="bg-slate-800 text-slate-300 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wide border border-slate-700 hover:bg-slate-700 hover:border-slate-600 transition-all shadow-lg">
+                    <i class="fa-solid fa-lock"></i> Admin
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4">
+        
+        <div id="adminPanel" class="hidden mb-10 animate-fade-in">
+            <div class="glass-card p-6 rounded-xl border-t-4 border-blue-500 relative overflow-hidden">
+                <div class="absolute -right-10 -top-10 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-rajdhani font-bold text-white"><i class="fa-solid fa-plus-circle mr-2 text-blue-400"></i>Add New Item</h2>
+                    <button onclick="window.crashMarket()" class="text-[10px] font-bold text-red-500/50 hover:text-red-500 uppercase tracking-widest border border-red-500/20 hover:border-red-500 px-2 py-1 rounded transition-all">
+                        <i class="fa-solid fa-skull"></i> Crash Sim
+                    </button>
+                </div>
+
+                <form id="addItemForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-4">
+                        <input type="text" id="itemName" placeholder="Item Name (e.g. Hyperion)" required class="glass-input p-3 rounded-lg w-full">
+                        <div class="grid grid-cols-2 gap-4">
+                            <input type="text" id="itemPrice" placeholder="Price (e.g. 1.2B)" required class="glass-input p-3 rounded-lg w-full">
+                            <input type="text" id="itemPredValue" placeholder="% Change (e.g. +15%)" class="glass-input p-3 rounded-lg w-full">
+                        </div>
+                        <input type="text" id="itemDetails" placeholder="Extra Details (e.g. Drop Rate: 0.1%)" class="glass-input p-3 rounded-lg w-full">
+                    </div>
+
+                    <div class="space-y-4">
+                         <div class="grid grid-cols-2 gap-4">
+                            <select id="itemPrediction" class="glass-input p-3 rounded-lg w-full cursor-pointer">
+                                <option value="High">Prediction: High</option>
+                                <option value="Low">Prediction: Low</option>
+                            </select>
+                            <input type="url" id="itemImage" placeholder="Image URL" required class="glass-input p-3 rounded-lg w-full">
+                        </div>
+                        <textarea id="itemDesc" placeholder="Market Analysis Description..." rows="3" class="glass-input p-3 rounded-lg w-full resize-none"></textarea>
+                    </div>
+
+                    <button type="submit" class="col-span-full mt-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-blue-600/20 transition-all uppercase tracking-wide text-sm flex items-center justify-center gap-2 group">
+                        <span>Post to Market</span>
+                        <i class="fa-solid fa-paper-plane group-hover:translate-x-1 transition-transform"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-6 px-1">
+            <div class="flex items-center gap-3">
+                <span class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                <h2 class="text-xl font-rajdhani font-bold text-slate-200 tracking-wide">Live Data</h2>
+            </div>
+            <span class="text-xs text-slate-500 font-mono">Last Sync: <span class="text-slate-400">Just now</span></span>
+        </div>
+
+        <div id="marketGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            </div>
+
+    </main>
+</body>
+</html>
